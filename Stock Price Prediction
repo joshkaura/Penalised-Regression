@@ -1,0 +1,228 @@
+library(quantmod)
+library(glmnet)
+library(reshape2)
+library(ggplot2)
+library(caret)
+library(corrplot)
+
+start_date <- "2020-01-01"
+end_date <- "2021-01-01"
+
+# Get stock data for Google, Apple, and NASDAQ 100 ETF
+getSymbols("GOOG", src = "yahoo", from = start_date, to = end_date)
+getSymbols("AAPL", src = "yahoo", from = start_date, to = end_date)
+getSymbols("QQQ", src = "yahoo", from = start_date, to = end_date)
+
+# Create a new data frame consolidating all the necessary information
+stock_data <- data.frame(
+  Date = index(GOOG),
+  GOOG_Close = Cl(GOOG),
+  GOOG_Open = Op(GOOG),
+  GOOG_High = Hi(GOOG),
+  GOOG_Low = Lo(GOOG),
+  GOOG_Volume = Vo(GOOG),
+  AAPL_Open = Op(AAPL),
+  AAPL_High = Hi(AAPL),
+  AAPL_Low = Lo(AAPL),
+  AAPL_Volume = Vo(AAPL),
+  QQQ_Open = Op(QQQ),
+  QQQ_High = Hi(QQQ),
+  QQQ_Low = Lo(QQQ),
+  QQQ_Volume = Vo(QQQ)
+)
+
+# View the head of the data frame to verify
+head(stock_data, 3)
+
+#Investigate Correlations
+par(mfrow=c(1,1))
+correlation <- cor(stock_data[,-1])
+correlation
+corrplot(correlation)
+
+x <- model.matrix(GOOG.Close~.-Date, stock_data)[,-1] #remove intercept
+y <- stock_data$GOOG.Close
+#head(x)
+#dim(x)
+#length(y)
+
+#Cross Validation for ridge/ lasso
+ridge.cv <- cv.glmnet(x,y,alpha=0)
+lasso.cv <- cv.glmnet(x,y,alpha=1)
+plot(ridge.cv)
+plot(lasso.cv)
+lambda_ridge <- ridge.cv$lambda.min #
+lambda_lasso <- lasso.cv$lambda.min #
+lambda_ridge
+lambda_lasso
+
+
+#find best enet:
+set.seed(1)
+alpha=seq(from=0,to=1,by=0.01)
+cvmse=rep(0,length(alpha))
+length(alpha)
+for (i in 1:length(alpha)){
+  fit=cv.glmnet(x,y,alpha=alpha[i])
+  cvmse[i]=min(fit$cvm)
+}
+cvmse
+opt.alpha=alpha[which.min(cvmse)]
+opt.alpha
+#alpha1[it]=opt.alpha
+
+enet.cv=cv.glmnet(x,y,alpha=opt.alpha)
+plot(enet.cv)
+lambda_enet <- enet.cv$lambda.min
+lambda_enet
+
+plot(enet.cv)
+
+par(mfrow=c(1,3))
+ridge.model <- glmnet(x,y,alpha=0)
+lasso.model <- glmnet(x,y,alpha=1)
+enet.model <- glmnet(x,y,alpha=opt.alpha)
+
+coef.glmnet(ridge.model, s=lambda_ridge)
+coef.glmnet(lasso.model, s=lambda_lasso)
+coef.glmnet(enet.model, s=lambda_enet)
+
+par(mfrow=c(1,3))
+plot(lasso.model, xvar="lambda")
+plot(ridge.model, xvar="lambda")
+plot(enet.model, xvar="lambda")
+
+index <- 1:length(stock_data$GOOG.Close)+1
+ridge_fit <- predict(ridge.cv, newx=x, s=lambda_ridge)
+lasso_fit <- predict(lasso.cv, newx=x, s=lambda_lasso)
+enet_fit <- predict(enet.cv, newx=x, s=lambda_enet)
+
+mean((ridge_fit - y)^2)
+mean((lasso_fit - y)^2)
+mean((enet_fit - y)^2)
+
+# Create a data frame for plotting
+combined_data <- data.frame(index, Actual = stock_data$GOOG.Close, Ridge = ridge_fit, 
+                            Lasso = lasso_fit, Enet = enet_fit)
+#combined_data
+
+ggplot(stock_data, aes(x = index)) +
+  geom_line(aes(y = stock_data$GOOG.Close, colour = "Actual")) +
+  geom_line(aes(y = ridge_fit, colour = "Ridge")) +
+  geom_line(aes(y = lasso_fit, colour = "Lasso")) +
+  geom_line(aes(y = enet_fit, colour = "Enet")) +
+  scale_color_manual(values = c("Actual" = "blue", "Ridge" = "red", "Lasso" = "green", "Enet" = "yellow")) +
+  theme_minimal() +
+  labs(x = "Index", y = "Value", title = "Actual vs Fitted Values, 2020-2021", colour = "Type")
+
+
+
+#New Data:
+new_start_date <- "2021-01-01"
+new_end_date <- "2022-01-01"
+
+# Get stock data for Google, Apple, and NASDAQ 100 ETF
+getSymbols("GOOG", src = "yahoo", from = new_start_date, to = new_end_date)
+getSymbols("AAPL", src = "yahoo", from = new_start_date, to = new_end_date)
+getSymbols("QQQ", src = "yahoo", from = new_start_date, to = new_end_date)
+
+# Create a new data frame consolidating all the necessary information
+new_stock_data <- data.frame(
+  Date = index(GOOG),
+  GOOG_Close = Cl(GOOG),
+  GOOG_Open = Op(GOOG),
+  GOOG_High = Hi(GOOG),
+  GOOG_Low = Lo(GOOG),
+  GOOG_Volume = Vo(GOOG),
+  AAPL_Open = Op(AAPL),
+  AAPL_High = Hi(AAPL),
+  AAPL_Low = Lo(AAPL),
+  AAPL_Volume = Vo(AAPL),
+  QQQ_Open = Op(QQQ),
+  QQQ_High = Hi(QQQ),
+  QQQ_Low = Lo(QQQ),
+  QQQ_Volume = Vo(QQQ)
+)
+
+# View the head of the data frame to verify
+head(new_stock_data, 3)
+
+
+new_x <- model.matrix(GOOG.Close~.-Date, new_stock_data)[,-1] #remove intercept
+new_y <- new_stock_data$GOOG.Close
+#new_x
+
+ridge_predictions <- predict(ridge.model, newx = new_x, s=lambda_ridge)
+lasso_predictions <- predict(lasso.model, newx = new_x, s=lambda_lasso)
+enet_predictions <- predict(enet.model, newx = new_x, s=lambda_enet)
+
+mean((ridge_predictions - new_y)^2)
+mean((lasso_predictions - new_y)^2)
+mean((enet_predictions - new_y)^2)
+
+
+new_start_date2 <- "2022-01-01"
+new_end_date2 <- "2023-01-01"
+
+# Get stock data for Google, Apple, and NASDAQ 100 ETF
+getSymbols("GOOG", src = "yahoo", from = new_start_date2, to = new_end_date2)
+getSymbols("AAPL", src = "yahoo", from = new_start_date2, to = new_end_date2)
+getSymbols("QQQ", src = "yahoo", from = new_start_date2, to = new_end_date2)
+
+# Create a new data frame consolidating all the necessary information
+new_stock_data2 <- data.frame(
+  Date = index(GOOG),
+  GOOG_Close = Cl(GOOG),
+  GOOG_Open = Op(GOOG),
+  GOOG_High = Hi(GOOG),
+  GOOG_Low = Lo(GOOG),
+  GOOG_Volume = Vo(GOOG),
+  AAPL_Open = Op(AAPL),
+  AAPL_High = Hi(AAPL),
+  AAPL_Low = Lo(AAPL),
+  AAPL_Volume = Vo(AAPL),
+  QQQ_Open = Op(QQQ),
+  QQQ_High = Hi(QQQ),
+  QQQ_Low = Lo(QQQ),
+  QQQ_Volume = Vo(QQQ)
+)
+
+# View the head of the data frame to verify
+head(new_stock_data2, 3)
+
+
+new_x2 <- model.matrix(GOOG.Close~.-Date, new_stock_data2)[,-1] #remove intercept
+new_y2 <- new_stock_data2$GOOG.Close
+new_x2
+
+ridge_predictions2 <- predict(ridge.model, newx = new_x2, s=lambda_ridge)
+lasso_predictions2 <- predict(lasso.model, newx = new_x2, s=lambda_lasso)
+enet_predictions2 <- predict(enet.model, newx = new_x2, s=lambda_enet)
+
+mean((ridge_predictions2 - new_y2)^2)
+mean((lasso_predictions2 - new_y2)^2)
+mean((enet_predictions2 - new_y2)^2)
+
+#Plot time series for 2021 and 2022
+par(mfrow=c(1,1))
+
+new_index <- 1:length(new_stock_data$GOOG.Close)+1     
+ggplot(new_stock_data, aes(x = new_index)) +
+  geom_line(aes(y = new_stock_data$GOOG.Close, colour = "Actual")) +
+  geom_line(aes(y = ridge_predictions, colour = "Ridge")) +
+  geom_line(aes(y = lasso_predictions, colour = "Lasso")) +
+  geom_line(aes(y = enet_predictions, colour = "Enet")) +
+  scale_color_manual(values = c("Actual" = "blue", "Ridge" = "red", "Lasso" = "green", "Enet" = "yellow")) +
+  theme_minimal() +
+  labs(x = "Trading Day", y = "Google Closing Price", title = "Actual vs Forecasted Values, 2021", colour = "Type")    
+
+
+new_index2 <- 1:length(new_stock_data2$GOOG.Close)+1     
+ggplot(new_stock_data2, aes(x = new_index2)) +
+  geom_line(aes(y = new_stock_data2$GOOG.Close, colour = "Actual")) +
+  geom_line(aes(y = ridge_predictions2, colour = "Ridge")) +
+  geom_line(aes(y = lasso_predictions2, colour = "Lasso")) +
+  geom_line(aes(y = enet_predictions2, colour = "Enet")) +
+  scale_color_manual(values = c("Actual" = "blue", "Ridge" = "red", "Lasso" = "green", "Enet" = "yellow")) +
+  theme_minimal() +
+  labs(x = "Trading Day", y = "Google Closing Price", title = "Actual vs Forecasted Values, 2022", colour = "Type")    
