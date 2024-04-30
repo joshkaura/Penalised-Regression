@@ -1,0 +1,97 @@
+library(glmnet)
+library(MASS)
+
+# setup
+set.seed(1)
+rho <- c(0.0) # correlation
+N <- 200 # number of observations
+n.sim <- 10 # number of simulations
+n.x <- 99 # number of covariates
+# container matrix; rows = simulations; cols = correlations 
+l.mse <- matrix(NA, n.sim, length(rho)) # lasso 
+r.mse <- matrix(NA, n.sim, length(rho)) # ridge
+ols.mse <- matrix(NA, n.sim, length(rho)) #OLS
+grid <- 10^seq(4, -2, length = 100) # 100 lambda values
+l.lambda <- matrix(NA, n.sim, length(rho))
+r.lambda <- matrix(NA, n.sim, length(rho))
+
+
+# loop over correlations
+for (j in 1:length(rho)){
+  # loop over number of simulations
+  for (i in 1:n.sim){
+    
+    # current level of correlation 
+    rho.j <- rho[j]
+    # variance covariance matrix filled with current correlation
+    Sigma <- matrix(rho.j, nrow=n.x, ncol=n.x)
+    # set the diagonal to 1
+    diag(Sigma) <- 1
+    # 100 (N) random draws of (n.x) covariates with mean 0 and variance sigma
+    X <- MASS::mvrnorm(N, rep(0,n.x), Sigma)
+    # random noise, draws from standard normal
+    e <- rnorm(N)
+    # true data generation process (all betas are exactly 1) => dense data generating mechanism
+    y <- rowSums(X) + e
+    # split into training/ test data
+    train <- sample(x = c(1:N), size = N/2)
+    
+    ## OLS
+    ols.mod <- lm(y[train]~X[train,])
+    y.hatols <- predict(ols.mod, newdata = as.data.frame(X[-train, ]))
+    ols.mse[i,j] <- (1/(N/2))*mean((y[-train]-y.hatols)^2)
+    
+    ## ridge
+    # cross-validation on ridge to find best of 100 lambda values
+    r.mod <- cv.glmnet(as.matrix(X[train,]), y[train], alpha = 0, lambda = grid)
+    # predict outcome using the model with the best lambda
+    y.hatr <- predict(r.mod, s = r.mod$lambda.min, newx = X[-train, ])
+    # optimal lambda
+    r.lambda[i,j] <- r.mod$lambda.min
+    # MSE
+    r.mse[i,j] <- mean((y[-train]-y.hatr)^2)
+    
+    ## lasso
+    # cross-validation on ridge to find best of 100 lambda values
+    l.mod <- cv.glmnet(X[train,], y[train], alpha = 1, lambda = grid)
+    # predict outcome using the model with the best lambda
+    y.hatl <- predict(l.mod, s = l.mod$lambda.min, newx = X[-train, ])
+    # optimal lambda
+    l.lambda[i,j] <- l.mod$lambda.min
+    # MSE
+    l.mse[i,j] <- mean((y[-train]-y.hatl)^2)
+  } 
+}
+
+
+#optimal lambda values:
+r.lambda
+l.lambda
+apply(r.lambda,2,mean) #average lambda of ridge model
+apply(l.lambda,2,mean) #average lambda of lasso model
+
+
+#Coefficients 
+coefficients <- cbind(coef(ols.mod),
+                      coef(r.mod),
+                      coef(l.mod))
+colnames(coefficients) <- c("OLS","Ridge","LASSO")
+coefficients
+t(coefficients)
+
+index <- 1:99
+betasols <- coefficients[,1]
+betasridge <- coefficients[,2]
+
+par(mfrow=c(1,2))
+plot( betasols, col = 'blue', pch = 16, ylim = c( -3, 5 ),
+      ylab = 'Estimated coefficients', xlab = 'j in OLS estimates', bty ='l' )
+#points( b_LS[2,], col = 'red', pch = 16 )
+abline( a = 1, b = 0, col = 'black' ) 
+#abline( a = -1, b = 0, col='red' )
+
+plot( betasridge, col = 'red', pch = 16, ylim = c(-3, 5), 
+      ylab = 'Estimated coefficients', xlab = 'j in Ridge estimates', bty ='l' )
+abline( a = 1, b = 0, col = 'black' )
+#abline( a = -1, b = 0, col = 'red' )
+
