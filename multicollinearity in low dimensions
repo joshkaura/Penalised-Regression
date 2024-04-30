@@ -1,0 +1,72 @@
+library(glmnet)
+
+# Number of iterations for the simulation study.
+iter <- 30
+# Number of training points.
+n <- 10
+
+# lambda coefficient - feel free to explore this parameter!
+lambda <- 0.3
+
+# Empty matrix of NAs for the regression coefficients, one for LS 
+# and one for ridge.
+b_LS <- matrix( NA, nrow = 2, ncol = iter )
+b_ridge <- matrix( NA, nrow = 2, ncol = iter )
+b_lasso <- matrix(NA, nrow = 2, ncol = iter)
+
+# For each iteration...
+for( i in 1:iter ){
+  
+  # As we can see x2 is highly correlated with x1 - COLLINEARITY!
+  x1 <- rnorm( n )
+  x2 <- 0.95 * x1 + rnorm( n, 0, 0.1 )
+  
+  # Design matrix.
+  x <- cbind( x1, x2 )
+  
+  # y = x1 - x2 + e, where error e is N(0,1)
+  y <- x1 + x2 + rnorm( n )
+  
+  # LS regression components - the below calculation obtains them given the 
+  # training data and response generated in this iteration, and stores 
+  # those estimates in the relevant column of the matrix b_LS.
+  b_LS[,i]<- solve( t(x) %*% x ) %*% t(x) %*% y
+  
+  # Ridge regression components - notice that the only difference relative 
+  # to the LS estimates above is the addition of a lambda x identity matrix 
+  # inside the inverse operator.
+  b_ridge[,i]<- solve( t(x) %*% x + lambda * diag(2) ) %*% t(x) %*% y
+  
+  lasso.model <- cv.glmnet(x=x,y=y)
+  
+}
+
+# Now we plot the results.  First, split the plotting window 
+# such that it has 1 row and 2 columns.
+par(mfrow=c(1,2))
+
+# Plot the LS estimates for beta_1.
+plot( b_LS[1,], col = 'blue', pch = 16, ylim = c( min(b_LS), max(b_LS) ),
+      ylab = 'Estimated coefficients', xlab = 'Least squares iteration', bty ='l' )
+# Add the LS estimates for beta_2 in a different colour.
+points( b_LS[2,], col = 'red', pch = 16 )
+# Add horizontal lines representing the true values of beta_1 and beta_2.
+abline( a = 1, b = 0, col = 'black' ) # Plot the true value of beta_1 = 1.
+#abline( a = -1, b = 0, col='red' ) # Plot the true value of beta_2 = -1.
+
+# Do the same for the ridge estimates.
+plot( b_ridge[1,], col = 'blue', pch = 16, ylim = c(min(b_LS), max(b_LS)), 
+      ylab = 'Estimated coefficients', xlab = 'Ridge iterations', bty ='l' )
+points( b_ridge[2,], col = 'red', pch = 16 ) 
+abline( a = 1, b = 0, col = 'black' )
+#abline( a = -1, b = 0, col = 'red' )
+
+# Add a legend to this plot.
+legend( 'bottomleft', cex = 1.3, text.col=c('blue','red'), 
+        legend = c( expression( beta[1] ),expression( beta[2] ) ), 
+        bty = 'n' )
+
+# Add a title over the top of both plots.
+mtext( expression( 'Highly correlated predictors,'~n == 10~','~ p == 2~', coefficients simulated 30 times'  ), 
+       side = 3, line = -3, outer = TRUE )
+
