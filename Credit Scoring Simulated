@@ -1,1 +1,125 @@
+library(glmnet)
+library(ISLR)
+library(ggplot2)
+library(corrplot)
 
+credit_data <- Credit
+head(credit_data)
+dim(credit_data)
+
+sum(is.na(credit_data)) #check for missing values
+
+
+
+#Convert necessary explanatory variables to factors
+credit_data$Gender <- as.factor(credit_data$Gender)
+credit_data$Student <- as.factor(credit_data$Gender)
+credit_data$Married <- as.factor(credit_data$Married)
+credit_data$Ethnicity <- as.factor(credit_data$Ethnicity)
+
+#Multicollinearity
+library(car)
+par(mfrow=c(1,2))
+
+pairs(credit_data[c(1,2,3,4,5,6,7,12)]) 
+M <- cor(credit_data[c(1,2,3,4,5,6,7,12)])
+?cor
+corrplot(M, type="lower")
+
+lm_correlation_model <- lm(Rating ~ ID + Income + Limit + Balance + Cards + Age
+                           + Education - Gender - Student - Married
+                           - Ethnicity, data = credit_data)
+summary(lm_correlation_model)
+vif_values <- vif(lm_correlation_model)
+vif_values
+barplot(vif_values, col = "skyblue", main = "Variance Inflation Factor (VIF)")
+
+
+#Split data into testing (70%) and testing (30%) sets
+set.seed(123)
+# Create the training and testing sets
+training_set <- credit_data[1:300, ]
+testing_set <- credit_data[301:400, ]
+
+head(training_set)
+head(testing_set)
+
+# Linear Regression
+lm_model <- lm(Rating ~ ., data = training_set)
+lm_predictions <- predict(lm_model, testing_set)
+lm_mse <- mean((testing_set$Rating - lm_predictions)^2)
+lm_mse
+
+x_train <- model.matrix(Rating~.,training_set)[,-1]
+x_test <- model.matrix(Rating~.,testing_set)[,-1]
+x_test
+y_train <- training_set$Rating
+y_test <- testing_set$Rating
+
+
+#Cross Validation:
+# Lasso Regression (alpha = 1)
+cv_lasso <- cv.glmnet(x_train, y_train, alpha = 1)
+optimal_lambda_lasso <- cv_lasso$lambda.min  # Optimal lambda minimizing the MSE
+plot(cv_lasso)
+# Ridge Regression (alpha = 0)
+cv_ridge <- cv.glmnet(x_train, y_train, alpha = 0)
+optimal_lambda_ridge <- cv_ridge$lambda.min  # Optimal lambda minimizing the MSE
+
+# Print the optimal lambda values
+print(paste("Optimal lambda for Lasso:", optimal_lambda_lasso))
+print(paste("Optimal lambda for Ridge:", optimal_lambda_ridge))
+
+# Ridge Regression
+# Note: alpha = 0 for ridge regression in glmnet
+ridge_model <- glmnet(x_train, y_train, alpha = 0)
+ridge_predictions <- predict(ridge_model, s = optimal_lambda_ridge, newx = x_test) # s = lambda value, adjust as necessary
+ridge_mse <- mean((y_test - ridge_predictions)^2)
+plot(ridge_model, xvar="lambda")
+plot(ridge_model) #plot ridge coefficients against log lambda
+
+# Lasso Regression
+# Note: alpha = 1 for lasso regression in glmnet
+lasso_model <- glmnet(x_train, y_train, alpha = 1)
+lasso_predictions <- predict(lasso_model, s = optimal_lambda_lasso, newx = x_test) # s = lambda value, adjust as necessary
+lasso_mse <- mean((y_test - lasso_predictions)^2)
+plot(lasso_model, xvar="lambda")#plot lasso coefficients against log lambda
+abline(h=0, lty="dotted", color="black")
+plot(lasso_model)
+
+# Print MSE for each model
+print(paste("Linear Regression MSE:", lm_mse))
+print(paste("Ridge Regression MSE:", ridge_mse))
+print(paste("Lasso Regression MSE:", lasso_mse))
+
+#Iterations to find optimum lambda for prediction:
+#Ridge
+lambda <- numeric()
+lambda
+ridge_mses <- numeric()
+for (k in 1:50){
+  lambda[k] <- k
+  pred.a <- predict(ridge_model, s = k, newx = x_test)
+  pred.a
+  mse.a <- mean((y_test - pred.a)^2)
+  ridge_mses[k] <- mse.a
+}
+lambda
+ridge_mses
+
+#LASSO
+lambda <- numeric()
+lambda
+lasso_mses <- numeric()
+for (k in 1:50){
+  lambda[k] <- k
+  pred.a <- predict(lasso_model, s = k, newx = x_test)
+  pred.a
+  mse.a <- mean((y_test - pred.a)^2)
+  lasso_mses[k] <- mse.a
+}
+lambda
+lasso_mses
+
+plot(x=lambda, y=lasso_mses)
+abline(h = lm_mse, col = "red", lty = 2)
