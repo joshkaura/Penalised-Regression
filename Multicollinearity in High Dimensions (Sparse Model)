@@ -1,0 +1,212 @@
+#Monte Carlo simulations: LASSO vs Ridge for muliticollinearity (sparse):
+
+library(glmnet)
+library(MASS)
+
+# setup
+set.seed(1)
+rho <- c(0.0, 0.3, 0.6, 0.9) # correlation
+N <- 500 # number of observations
+n.sim <- 10 # number of simulations
+n.x <- 100 # number of covariates
+betas <- rep(c(1, 0, 0), length.out = 100) #actual data generating model of 100 covariates
+betas2 <- rep(c(1, 0, 0), length.out = 10)
+
+# container matrix; rows = simulations; cols = correlations 
+l.mse <- matrix(NA, n.sim, length(rho)) # lasso 
+r.mse <- matrix(NA, n.sim, length(rho)) # ridge
+ols.mse <- matrix(NA, n.sim, length(rho)) #OLS
+alasso.mse <- matrix(NA, n.sim, length(rho)) #adaptive lasso
+rlasso.mse <- matrix(NA, n.sim, length(rho)) #relaxed lasso
+grid <- 10^seq(4, -2, length = 100) # 100 lambda values
+l.lambda <- matrix(NA, n.sim, length(rho))
+r.lambda <- matrix(NA, n.sim, length(rho))
+
+# loop over correlations
+for (j in 1:length(rho)){
+  # loop over number of simulations
+  for (i in 1:n.sim){
+    
+    # current level of correlation 
+    rho.j <- rho[j]
+    # variance covariance matrix filled with current correlation
+    Sigma <- matrix(rho.j, nrow=n.x, ncol=n.x)
+    # set the diagonal to 1
+    diag(Sigma) <- 1
+    # 100 (N) random draws of (n.x) covariates with mean 0 and variance sigma
+    X <- MASS::mvrnorm(N, rep(0,n.x), Sigma)
+    # random noise, draws from standard normal
+    e <- rnorm(N)
+    # true data generation process (all betas are exactly 1) => dense data generating mechanism
+    y <- X %*% betas + e
+    # split into training/ test data
+    train <- sample(x = c(1:N), size = N/2)
+    
+    ## OLS
+    ols.mod <- lm(y[train]~X[train,])
+    y.hatols <- predict(ols.mod, newdata = as.data.frame(X[-train, ]))
+    ols.mse[i,j] <- (1/(N/2))*mean((y[-train]-y.hatols)^2)
+    
+    ## ridge
+    # cross-validation on ridge to find best of 100 lambda values
+    r.mod <- cv.glmnet(as.matrix(X[train,]), y[train], alpha = 0, lambda = grid)
+    # predict outcome using the model with the best lambda
+    y.hatr <- predict(r.mod, s = r.mod$lambda.min, newx = X[-train, ])
+    # optimal lambda
+    r.lambda[i,j] <- r.mod$lambda.min
+    # MSE
+    r.mse[i,j] <- mean((y[-train]-y.hatr)^2)
+    
+    ## lasso
+    # cross-validation on ridge to find best of 100 lambda values
+    l.mod <- cv.glmnet(X[train,], y[train], alpha = 1, lambda = grid)
+    # predict outcome using the model with the best lambda
+    y.hatl <- predict(l.mod, s = l.mod$lambda.min, newx = X[-train, ])
+    # optimal lambda
+    l.lambda[i,j] <- l.mod$lambda.min
+    # MSE
+    l.mse[i,j] <- mean((y[-train]-y.hatl)^2)
+    
+    #adaptive lasso
+    ridge_coef <- as.numeric(coef(r.mod, s = r.mod$lambda.min))[-1] #exclude intercept
+    alasso.mod <- cv.glmnet(as.matrix(X[train,]), y[train], alpha = 1, lambda = grid, 
+                            penalty.factor = 1 / abs(ridge_coef))
+    # predict outcome using the model with the best lambda
+    y.hatalasso <- predict(alasso.mod, s = alasso.mod$lambda.min, newx = X[-train, ])
+    #MSE
+    alasso.mse[i,j] <- mean((y[-train]-y.hatalasso)^2)
+    
+    #relaxed lasso
+    rlasso.mod <- cv.glmnet(as.matrix(X[train,]), y[train], alpha = 1, lambda = grid, 
+                            relax = TRUE)
+    # predict outcome using the model with the best lambda
+    y.hatrlasso <- predict(rlasso.mod, s = rlasso.mod$lambda.min, newx = X[-train, ])
+    #MSE
+    rlasso.mse[i,j] <- mean((y[-train]-y.hatrlasso)^2)
+  } 
+}
+
+
+#optimal lambda values:
+r.lambda
+l.lambda
+apply(r.lambda,2,mean) #average lambda of ridge model
+apply(l.lambda,2,mean) #average lambda of lasso model
+
+
+#Coefficients 
+coefficients <- cbind(coef(ols.mod),
+                      coef(r.mod),
+                      coef(l.mod))
+colnames(coefficients) <- c("OLS","Ridge","LASSO")
+coefficients
+t(coefficients)
+
+#MSEs
+apply(ols.mse,2,mean) #average MSE of OLS model
+apply(l.mse,2,mean) #average MSE of lasso model
+apply(r.mse,2,mean) #average MSE of ridge model
+apply(alasso.mse,2,mean) #average MSE of adaptive lasso
+apply(rlasso.mse,2,mean) #average MSE of relaxed lasso
+
+ols.mse
+
+
+for (j in 1:length(rho)){
+  # current level of correlation 
+  rho.j <- rho[j]
+  # variance covariance matrix filled with current correlation
+  Sigma <- matrix(rho.j, nrow=n.x, ncol=n.x)
+  # set the diagonal to 1
+  diag(Sigma) <- 1
+  # 100 (N) random draws of (n.x) covariates with mean 0 and variance sigma
+  X <- MASS::mvrnorm(N, rep(0,n.x), Sigma)
+  # random noise, draws from standard normal
+  e <- rnorm(N)
+  # true data generation process (all betas are exactly 1) => dense data generating mechanism
+  #y <- rowSums(X) + e
+  y <- X %*% betas + e
+  # split into training/ test data
+  train <- sample(x = c(1:N), size = N/2)
+  
+  ## ridge
+  # cross-validation on ridge to find best of 100 lambda values
+  r.mod <- cv.glmnet(as.matrix(X[train,]), y[train], alpha = 0, lambda = grid)
+  # predict outcome using the model with the best lambda
+  y.hatr <- predict(r.mod, s = r.mod$lambda.min, newx = X[-train, ])
+  
+  ## lasso
+  # cross-validation on ridge to find best of 100 lambda values
+  l.mod <- cv.glmnet(X[train,], y[train], alpha = 1, lambda = grid)
+  # predict outcome using the model with the best lambda
+  y.hatl <- predict(l.mod, s = l.mod$lambda.min, newx = X[-train, ])
+  lassocoeffs[1,j] <- sum(coef(l.mod, s=l.mod$lambda.min) != 0)
+  
+  
+  #adaptive lasso
+  ridge_coef <- as.numeric(coef(r.mod, s = r.mod$lambda.min))[-1] #exclude intercept
+  alasso.mod <- cv.glmnet(as.matrix(X[train,]), y[train], alpha = 1, lambda = grid, 
+                          penalty.factor = 1 / abs(ridge_coef))
+  # predict outcome using the model with the best lambda
+  y.hatalasso <- predict(alasso.mod, s = alasso.mod$lambda.min, newx = X[-train, ])
+  alassocoeffs[1,j] <- sum(coef(alasso.mod, s=alasso.mod$lambda.min) != 0)
+  
+  #relaxed lasso
+  rlasso.mod <- cv.glmnet(as.matrix(X[train,]), y[train], alpha = 1, lambda = grid, 
+                          relax = TRUE)
+  # predict outcome using the model with the best lambda
+  y.hatrlasso <- predict(rlasso.mod, s = rlasso.mod$lambda.min, newx = X[-train, ])
+  rlassocoeffs[1,j] <- sum(coef(rlasso.mod, s=rlasso.mod$lambda.min) != 0)
+}
+lassocoeffs
+alassocoeffs
+rlassocoeffs
+
+lassocoeffs[1,1]
+library(reshape2)
+library(ggplot2)
+
+# Assuming you have data frames lassocoeffs, alassocoeffs, rlassocoeffs
+# with column names 'rho=0.0', 'rho=0.3', 'rho=0.6', 'rho=0.9'
+
+# Step 1: Convert to long format
+lasso_long <- melt(lassocoeffs, variable.name = 'rho', value.name = 'frequency')
+lasso_long$coeffs <- 'lasso'
+alasso_long <- melt(alassocoeffs, variable.name = 'rho', value.name = 'frequency')
+alasso_long$coeffs <- 'adaptive lasso'
+rlasso_long <- melt(rlassocoeffs, variable.name = 'rho', value.name = 'frequency')
+rlasso_long$coeffs <- 'relaxed lasso'
+
+# Step 2: Combine into one data frame
+all_data <- rbind(lasso_long, alasso_long, rlasso_long)
+
+# Step 3: Create the bar chart
+ggplot(all_data, aes(x = rho, y = frequency, fill = coeffs)) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+  theme_minimal() +
+  labs(title = 'No. of non-zero coefficients by Rho Values',
+       x = 'Rho Value',
+       y = 'No. non-zero coefficients',
+       fill = 'Number of non zero coefficients')
+
+
+N.obs <- c(100,200,500,1000,5000, 50000, 500000)
+#Altering N to fit each of these values, and recording number of non zero coefficients:
+alassocoeffs0 <- c(63,48,41,36,37,35,35) 
+alassocoeffs3 <- c(64,45,63,45,47,41,36)
+alassocoeffs6 <- c(71,45,44,51,50,40,35)
+alassocoeffs9 <- c(62,59,40,58,43,35,38)
+
+df <- data.frame(N.obs, 'rho=0.0' = alassocoeffs0, 'rho=0.3' = alassocoeffs3, 
+                 'rho=0.6' = alassocoeffs6, 'rho=0.9' = alassocoeffs9)
+
+# Melt the data frame to long format for ggplot
+df_long <- melt(df, id.vars = 'N.obs', variable.name = 'rho', value.name = 'frequency')
+
+# Plot
+ggplot(df_long, aes(x = N.obs, y = frequency, colour = rho, group = rho)) +
+  geom_line() +
+  geom_point() +
+  scale_x_log10(labels = scales::comma) +
+  theme_minimal() +
+  labs(x = "No. training data points, N", y = "No. non zero coeffs", title = "No. of non zero coefficients selected by adaptive lasso model as N increases", colour = "Rho Value")
