@@ -1,0 +1,38 @@
+#small n and p
+iter <- 30
+n <- 3
+lambda <- 0.5
+
+b_LS <- matrix( NA, nrow = 2, ncol = iter )
+b_ridge <- matrix( NA, nrow = 2, ncol = iter )
+
+set.seed(1)
+for( i in 1:iter ){
+  x1 <- rnorm( n )
+  x2 <- rnorm( n )
+  x <- cbind( x1, x2 )
+  y <- x1 + x2 + rnorm( n )
+  b_LS[,i]<- solve( t(x) %*% x ) %*% t(x) %*% y
+  b_ridge[,i]<- solve( t(x) %*% x + lambda * diag(2) ) %*% t(x) %*% y
+}
+x1
+par(mfrow=c(1,2))
+plot( b_LS[1,], col = 'blue', pch = 16, ylim = c( min(b_LS), max(b_LS) ),
+      ylab = 'Estimated coefficients', xlab = 'Least squares iterations', bty ='l' )
+points( b_LS[2,], col = 'red', pch = 16 )
+abline( a = 1, b = 0, col = 'black' ) 
+#abline( a = -1, b = 0, col='red' )
+
+plot( b_ridge[1,], col = 'blue', pch = 16, ylim = c(min(b_LS), max(b_LS)), 
+      ylab = 'Estimated coefficients', xlab = 'Ridge iterations', bty ='l' )
+points( b_ridge[2,], col = 'red', pch = 16 ) 
+abline( a = 1, b = 0, col = 'black' )
+#abline( a = -1, b = 0, col = 'red' )
+
+# Add a legend to this plot.
+legend( 'bottomleft', cex = 1.3, text.col=c('blue','red'), 
+        legend = c( expression( beta[1] ),expression( beta[2] ) ), bty = 'n' )
+
+mtext( expression('No correlations with'~n == 3~','~ p == 2), 
+       side = 3, line = -3, outer = TRUE )
+
