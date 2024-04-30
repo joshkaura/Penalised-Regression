@@ -1,0 +1,80 @@
+library(glmnet)
+library(ggplot2)
+library(corrplot)
+library(tidyverse)
+library(ggcorrplot)
+library(GGally)
+library(ISLR)
+library(car)
+
+df <- read.csv("/users/joshkaura/Desktop/University/Year 3/Project III/R Code/Dataset/credit_risk_dataset.csv")
+head(df)
+dim(df)
+df <- na.omit(df) #remove missing data
+dim(df)
+head(df)
+df <- df[,-8] #remove interest rate
+head(df)
+dim(df)
+
+
+ggcorr(cor(df[,c(-3,-5,-6,-8,-10)]), label = T, label_round = 2)
+
+standard.model <- glm(loan_status ~., data = df, family = binomial)
+vif_values <- vif(standard.model)
+vif_values
+training_indices <- 1:((dim(df)[1])*0.7)
+
+train_data <- df[training_indices,]
+test_data <- df[-training_indices,]
+
+x <- model.matrix(loan_status ~ .,train_data)[,-1]
+y <- train_data$loan_status
+test.x <- model.matrix(loan_status ~ .,test_data)[,-1]
+
+#Standard:
+standard.model <- glm(loan_status ~., data = train_data, family = binomial)
+standard.probs <- predict(standard.model, test_data, type = "response")
+standard.predict <- rep(0,nrow(test_data))
+standard.predict[standard.probs>.5] <- 1
+#Confusion Table
+standard.table <- table(pred=standard.predict,true=test_data$loan_status)
+standard.table
+mean(standard.predict==test_data$loan_status) #accuracy
+#sensitivity
+(standard.table[2,2])/(standard.table[2,2]+standard.table[1,2])
+#specificity
+(standard.table[1,1])/(standard.table[1,1]+standard.table[2,1])
+
+
+#Ridge:
+cv.ridge <- cv.glmnet(x,y, family = binomial, alpha=0, type.measure = "mse")
+#plot(cv.ridge)
+ridge.probs <- predict(cv.ridge, s=cv.ridge$lambda.min, newx = test.x, type="response")
+ridge.predict <- rep(0,nrow(test_data))
+ridge.predict[ridge.probs>.5] <- 1
+ridge.table <- table(pred=ridge.predict,true=test_data$loan_status)
+mean(ridge.predict==test_data$loan_status) #accuracy
+#sensitivity
+(ridge.table[2,2])/(ridge.table[2,2]+ridge.table[1,2])
+#specificity
+(ridge.table[1,1])/(ridge.table[1,1]+ridge.table[2,1])
+
+#LASSO
+cv.lasso <- cv.glmnet(x,y, family = binomial, alpha=1, type.measure = "mse")
+#plot(cv.lasso)
+lasso.probs <- predict(cv.lasso, s=cv.lasso$lambda.1se, newx = test.x, type="response")
+lasso.predict <- rep(0,nrow(test_data))
+lasso.predict[lasso.probs>.5] <- 1
+lasso.table <- table(pred=lasso.predict,true=test_data$loan_status)
+mean(lasso.predict==test_data$loan_status) #accuracy
+#sensitivity
+(lasso.table[2,2])/(lasso.table[2,2]+lasso.table[1,2])
+#specificity
+(lasso.table[1,1])/(lasso.table[1,1]+lasso.table[2,1])
+
+coef(cv.lasso, s=cv.lasso$lambda.1se)
+
+
+
+
